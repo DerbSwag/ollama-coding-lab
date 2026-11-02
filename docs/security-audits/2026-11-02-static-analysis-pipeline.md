@@ -111,3 +111,26 @@ Hadolint or Trivy release emitted incorrect exit codes.
 
 Rollback: revert the separate hardening commit after review to restore the baseline
 logic and tests. No rollback executed; baseline false-PASS risk would return.
+
+## Phase 1 closure: remote enforcement verified
+
+Previous no-push/remote-NOT_RUN statements describe the earlier local checkpoints.
+They are superseded for Phase 1 by the following evidence:
+
+- Run [41477039945](https://github.com/DerbSwag/ollama-coding-lab/actions/runs/41477039945),
+  feature branch head `d4a0d9cea45de8bf159af75ae66e096b0810fec4`.
+- GitHub connector read-only inspection confirmed job `Static Analysis Gate`
+  (125385254210): contracts, evidence collection and artifact upload succeeded;
+  the scan step/job concluded failure.
+- Artifact `security-evidence-41477039945-1`, ID 13156774355, created
+  `2026-11-02T16:00:10Z`, digest
+  `sha256:127fdc68954ac6b3eb5b1adf6424865eebbffabac35772a566f38f09be51a8f5`.
+- The user-supplied remote gate/Trivy evidence identifies HIGH `DS-0002`,
+  `gate.status: fail`, Hadolint pass/0, Trivy findings/1 with one blocker and
+  consistent evidence, and `ollamaUsedForGate: false`. Job/artifact metadata was
+  independently verified; raw remote JSON fields here are attributed to that
+  user-supplied evidence, not a new local scanner run.
+
+Phase 1 status: **Security Gate Enforcement Verified**. The remote CI failure
+is the expected rejection of an insecure example, not successful application
+validation. Phase 2 remote acceptance and branch protection remain separate gates.

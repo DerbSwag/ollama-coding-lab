@@ -15,8 +15,44 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  contract-tests:
+    name: Gate Contracts (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-2022
+            shell: powershell
+          - os: ubuntu-24.04
+            shell: pwsh
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: ${{ matrix.shell }}
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+
+      - name: Test gate failure handling
+        run: ./tests/Test-SecurityGate.ps1
+
+      - name: Upload contract evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: gate-contracts-${{ matrix.os }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: .evidence/gate-test-*/test-results.json
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 7
+
   static-analysis:
     name: Static Analysis Gate
+    needs: contract-tests
+    if: ${{ always() }}
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
@@ -25,17 +61,18 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Test gate failure handling
+      - name: Require passing contracts
         shell: pwsh
-        run: ./tests/Test-SecurityGate.ps1
+        env:
+          CONTRACT_RESULT: ${{ needs.contract-tests.result }}
+        run: |
+          if ($env:CONTRACT_RESULT -ne 'success') {
+            throw 'Mandatory contract tests did not succeed.'
+          }
 
-      - name: Collect evidence without Ollama
+      - name: Enforce baseline policy and verify insecure fixture rejection
         shell: pwsh
-        run: ./scripts/Collect-Evidence.ps1
-
-      - name: Run static analysis gate
-        shell: pwsh
-        run: ./scripts/Invoke-SecurityAudit.ps1
+        run: ./tests/Test-ScannerIntegration.ps1
 
       - name: Upload static analysis evidence
         if: ${{ always() }}
@@ -47,6 +84,11 @@ jobs:
             .evidence/gate.json
             .evidence/hadolint.json
             .evidence/trivy.json
+            .evidence/scanner-integration-*/test-results.json
+            .evidence/scanner-integration-*/insecure/.evidence/environment.json
+            .evidence/scanner-integration-*/insecure/.evidence/gate.json
+            .evidence/scanner-integration-*/insecure/.evidence/hadolint.json
+            .evidence/scanner-integration-*/insecure/.evidence/trivy.json
           include-hidden-files: true
           if-no-files-found: error
           retention-days: 7

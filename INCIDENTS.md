@@ -42,3 +42,20 @@
   `JSON and exit-code hardening` in the static analysis audit document.
 - Residual risk: GitHub-hosted execution/branch protection remain unverified;
   scanner/database trust and existing Dockerfile findings remain outside this fix.
+
+## 2026-11-02: Phase 1 expected root-user policy rejection
+
+- Problem: remote run 41477039945 failed its policy step with HIGH `DS-0002`, as
+  expected. This verified enforcement rather than indicating a broken harness.
+- Confirmed cause: the example Dockerfile omitted a non-root runtime USER.
+- Mitigation: Phase 2 root baseline adds `USER node` and owned source copies;
+  preserve the original under isolated negative fixtures. Real integration verifies
+  insecure fail/1 and root baseline pass/0 without suppressing DS-0002 or lowering
+  severity. Build/runtime and Phase 2 remote validation remain pending.
+
+## 2026-11-02: Matrix shell expression rejected by actionlint
+
+- Problem: actionlint rejected matrix context in a step-level `shell` expression.
+- Root cause: matrix shell selection was placed at the unsupported step context.
+- Mitigation: move shell expression to job-level `defaults.run.shell`; local
+  actionlint then exited 0. No failing workflow was pushed.

@@ -133,6 +133,9 @@ try {
         '--skip-version-check', '--ignorefile', '/dev/null',
         '--skip-dirs', '/workspace/.git', '--skip-dirs', '/workspace/.evidence',
         '--skip-dirs', '/workspace/node_modules',
+        # Deliberately insecure examples are scanned separately after being copied
+        # to an isolated root Dockerfile by Test-ScannerIntegration.ps1.
+        '--skip-dirs', '/workspace/tests/fixtures',
         '--skip-files', '**/.env', '--skip-files', '**/.env.*',
         '--skip-files', '**/*.pem', '--skip-files', '**/*.key',
         '--skip-files', '**/*.pfx', '--skip-files', '**/*.p12', '/workspace'

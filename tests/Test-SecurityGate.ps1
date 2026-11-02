@@ -72,6 +72,9 @@ function docker {
     elseif ($args -notcontains 'HIGH,CRITICAL' -or $args -notcontains 'vuln,misconfig' -or $args -notcontains '--exit-code') {
         throw 'Missing Trivy policy'
     }
+    if ($scanner -eq 'trivy' -and $args -notcontains '/workspace/tests/fixtures') {
+        throw 'Insecure fixtures must be scanned in isolation, not mixed into the baseline'
+    }
     $global:SecurityGateTestCalls += $scanner
     if ($global:SecurityGateTestCase.outage) { throw 'Simulated Docker outage' }
     $global:LASTEXITCODE = $global:SecurityGateTestCase[$scanner].code

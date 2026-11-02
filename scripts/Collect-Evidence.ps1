@@ -17,7 +17,9 @@ New-Item -ItemType Directory -Path $output -Force | Out-Null
 $relativePaths = @(
     'Dockerfile', 'README.md', '.gitignore', 'security-tools.json',
     'scripts/Collect-Evidence.ps1', 'scripts/Invoke-SecurityAudit.ps1',
-    'tests/Test-SecurityGate.ps1', '.github/workflows/security-audit.yml'
+    'tests/Test-SecurityGate.ps1', 'tests/Test-ScannerIntegration.ps1',
+    'tests/fixtures/Dockerfile.insecure', '.dockerignore',
+    '.github/workflows/security-audit.yml'
 )
 $hashes = @(
     foreach ($relative in $relativePaths) {
