@@ -1,0 +1,52 @@
+name: Security Audit
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main, feature/security-audit-pipeline]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: security-audit-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  static-analysis:
+    name: Static Analysis Gate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+
+      - name: Test gate failure handling
+        shell: pwsh
+        run: ./tests/Test-SecurityGate.ps1
+
+      - name: Collect evidence without Ollama
+        shell: pwsh
+        run: ./scripts/Collect-Evidence.ps1
+
+      - name: Run static analysis gate
+        shell: pwsh
+        run: ./scripts/Invoke-SecurityAudit.ps1
+
+      - name: Upload static analysis evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: security-evidence-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            .evidence/environment.json
+            .evidence/gate.json
+            .evidence/hadolint.json
+            .evidence/trivy.json
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 7
