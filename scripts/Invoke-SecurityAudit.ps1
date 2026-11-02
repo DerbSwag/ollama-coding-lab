@@ -26,30 +26,84 @@ foreach ($reportName in @('hadolint.json', 'trivy.json')) {
     Set-Content -LiteralPath (Join-Path $output $reportName) -Value '' -Encoding UTF8
 }
 
+function Get-BlockingFindingCount {
+    param([string]$Name, [string]$Json)
+    # Wrapping preserves empty/singleton arrays on both Windows PowerShell 5.1
+    # and PowerShell 7. Parsing an array directly would enumerate its contents.
+    $report = (ConvertFrom-Json -InputObject ('{"report":' + $Json + '}') -ErrorAction Stop).report
+    $count = 0
+    if ($Name -eq 'Hadolint') {
+        if ($report -isnot [Array]) { throw 'Expected Hadolint array' }
+        foreach ($finding in $report) {
+            if ($finding -isnot [PSCustomObject] -or
+                $finding.code -isnot [string] -or [string]::IsNullOrWhiteSpace($finding.code) -or
+                $finding.level -cnotin @('error', 'warning', 'info', 'style')) {
+                throw 'Invalid Hadolint finding'
+            }
+            if ($finding.level -cin @('error', 'warning')) { $count++ }
+        }
+    }
+    else {
+        if ($report -isnot [PSCustomObject] -or
+            ($report.SchemaVersion -isnot [int] -and $report.SchemaVersion -isnot [long]) -or
+            $report.SchemaVersion -ne 2 -or
+            $report.Results -isnot [Array]) { throw 'Invalid Trivy report' }
+        foreach ($result in $report.Results) {
+            if ($result -isnot [PSCustomObject]) { throw 'Invalid Trivy result' }
+            foreach ($category in @('Vulnerabilities', 'Misconfigurations')) {
+                $property = $result.PSObject.Properties[$category]
+                if ($null -eq $property) { continue }
+                if ($property.Value -isnot [Array]) { throw 'Expected Trivy finding array' }
+                foreach ($finding in $property.Value) {
+                    if ($finding -isnot [PSCustomObject] -or
+                        $finding.Severity -cnotin @('UNKNOWN', 'LOW', 'MEDIUM', 'HIGH', 'CRITICAL')) {
+                        throw 'Invalid Trivy severity'
+                    }
+                    if ($category -eq 'Vulnerabilities') {
+                        if ($finding.VulnerabilityID -isnot [string] -or
+                            [string]::IsNullOrWhiteSpace($finding.VulnerabilityID)) { throw 'Invalid vulnerability ID' }
+                        if ($finding.Severity -cin @('HIGH', 'CRITICAL')) { $count++ }
+                    }
+                    else {
+                        if ($finding.ID -isnot [string] -or [string]::IsNullOrWhiteSpace($finding.ID) -or
+                            $finding.Status -cnotin @('FAIL', 'PASS', 'EXCEPTION')) { throw 'Invalid misconfiguration' }
+                        if ($finding.Status -ceq 'FAIL' -and $finding.Severity -cin @('HIGH', 'CRITICAL')) { $count++ }
+                    }
+                }
+            }
+        }
+    }
+    return $count
+}
+
 function Invoke-Scanner {
     param([string]$Name, [string[]]$Arguments, [string]$ReportName)
+    $code = $null
+    $blockingFindings = $null
     try {
         $lines = @(& docker @Arguments)
         $code = $LASTEXITCODE
         $json = $lines -join "`n"
-        # Require parsable scanner output even when the executable exits zero.
-        if ([string]::IsNullOrWhiteSpace($json)) { throw 'Missing scanner output' }
-        $parsed = ConvertFrom-Json -InputObject $json -ErrorAction Stop
-        if ($Name -eq 'Hadolint') {
-            if ($json -notmatch '^\s*\[') { throw 'Expected Hadolint JSON array' }
-        }
-        elseif ($null -eq $parsed -or $parsed.SchemaVersion -ne 2) {
-            throw 'Expected Trivy schema version 2'
-        }
+        # Retain stdout for diagnosis even when validation fails; only a validated
+        # report consistent with the exit code can authorize PASS.
         $json | Set-Content -LiteralPath (Join-Path $output $ReportName) -Encoding UTF8
+        if ([string]::IsNullOrWhiteSpace($json)) { throw 'Missing scanner output' }
+        $blockingFindings = Get-BlockingFindingCount -Name $Name -Json $json
         $status = 'error'
-        if ($code -eq 0) { $status = 'pass' }
-        elseif ($code -eq 1) { $status = 'findings' }
-        return [ordered]@{ status = $status; exitCode = $code }
+        $reason = 'unexpected-exit-code'
+        if ($code -eq 0 -or $code -eq 1) {
+            $reason = 'json-exit-code-mismatch'
+            if ($code -eq 0 -and $blockingFindings -eq 0) { $status = 'pass'; $reason = 'consistent' }
+            elseif ($code -eq 1 -and $blockingFindings -gt 0) { $status = 'findings'; $reason = 'consistent' }
+        }
+        return [ordered]@{ status = $status; exitCode = $code; blockingFindings = $blockingFindings; reason = $reason }
     }
     catch {
         Write-Warning "$Name failed to produce a valid report. Gate will fail."
-        return [ordered]@{ status = 'error'; exitCode = $null }
+        return [ordered]@{
+            status = 'error'; exitCode = $code; blockingFindings = $blockingFindings
+            reason = 'execution-or-report-error'
+        }
     }
 }
 

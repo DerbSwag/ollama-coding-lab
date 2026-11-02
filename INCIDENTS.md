@@ -26,3 +26,19 @@
 - Mitigation: query Microsoft's registry tag list, use the available
   `7.5-ubuntu-24.04` image and rerun Linux contract tests. This test image is not a
   dependency of the committed workflow, which uses the hosted runner's `pwsh`.
+
+## 2026-11-02: Security gate accepted inconsistent scanner evidence
+
+- Problem: baseline gate could return PASS for valid JSON containing blocking
+  findings when the child exit code was 0. Incomplete Trivy report shapes could
+  also pass. Reproduced using synthetic Docker responses, not production data.
+- Confirmed root cause: superficial JSON validation followed by status assignment
+  from exit code alone; JSON findings were not evaluated against the blocking policy.
+- Mitigation: validate report/finding shapes, count policy-relevant findings and
+  compare them against exit 0/1. Contradictions produce `error` and overall exit 1.
+  Preserve raw exit codes/stdout, add counts/reasons, and run 37 regression contracts
+  on PowerShell 5.1 and 7.5. Real integration retains the expected HIGH root-user
+  finding and fails the gate. Evidence and limitations are recorded under
+  `JSON and exit-code hardening` in the static analysis audit document.
+- Residual risk: GitHub-hosted execution/branch protection remain unverified;
+  scanner/database trust and existing Dockerfile findings remain outside this fix.
