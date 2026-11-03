@@ -147,5 +147,8 @@ Phase 1 enforcement was verified remotely in [run 41477039945](https://github.co
 at commit `d4a0d9c`: the job failed on the intentionally root-user Dockerfile, and
 evidence upload succeeded. This expected rejection is not a green CI run.
 Phase 2 changes/results: `docs/security-audits/2026-11-02-phase2-merge-ready-pipeline.md`.
-Phase 2 GitHub-hosted execution remains pending an approved push.
+Phase 2 at `0b2e1d4` passed the [PR workflow](https://github.com/DerbSwag/ollama-coding-lab/actions/runs/41653749463)
+with all three jobs and artifact uploads successful. PR #1 remains open.
+The separate SHA-pinned Node24 Action refresh requires fresh head checks before
+merge; review details are in `docs/security-audits/2026-11-03-final-review-node24-actions.md`.
 Operational failure root causes and mitigations: `INCIDENTS.md`.

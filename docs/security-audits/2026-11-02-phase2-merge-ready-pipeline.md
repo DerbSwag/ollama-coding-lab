@@ -70,3 +70,15 @@ After review, revert the separate Phase 2 commit to restore `d4a0d9c`; this rest
 the intentionally failing root-user baseline. Do not reset/clean user work.
 Rollback was not executed. Approve feature-branch push, verify the new GitHub run
 and both artifact types, then open/review a PR to main and configure required checks.
+
+## Remote acceptance verified on 2026-11-03
+
+Earlier NOT_RUN/no-push/PR-pending notes are historical local checkpoints. Read-only
+GitHub inspection now confirms PR #1 is open at `0b2e1d4`, not merged, and mergeable.
+Push run 41652666299 and PR run 41653749463 each passed all three jobs. The PR run
+uploaded Ubuntu/Windows contract evidence and static positive/negative evidence.
+Codex's summary comment reports code review completed for this head without findings.
+
+The separate Node24 Action refresh still needs fresh remote checks. See
+`2026-11-03-final-review-node24-actions.md` for verified run/artifact IDs,
+review scope, metadata compatibility checks and the remaining merge gate.

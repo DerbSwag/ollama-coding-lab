@@ -59,3 +59,21 @@
 - Root cause: matrix shell selection was placed at the unsupported step context.
 - Mitigation: move shell expression to job-level `defaults.run.shell`; local
   actionlint then exited 0. No failing workflow was pushed.
+
+## 2026-11-03: GitHub Actions Node20 runtime warning
+
+- Problem: PR #1 reported Node20 deprecation warnings despite successful checks.
+- Confirmed cause: pinned checkout v4.3.1 and upload-artifact v4.6.2 metadata both
+  declare node20. This is a maintenance warning, not a proven security exploit.
+- Mitigation: update four references to SHA-pinned checkout v7.0.1 and
+  upload-artifact v7.0.2, both declaring node24; validate inputs and unchanged
+  workflow semantics with metadata checks and actionlint. Fresh hosted execution
+  and confirmation that warnings disappear remain pending approved push.
+
+## 2026-11-03: Docker daemon unavailable for workflow lint
+
+- Problem: Docker-based actionlint could not find the Docker Desktop Linux pipe.
+- Confirmed cause: the daemon endpoint was unavailable in this session.
+- Mitigation: download the official actionlint 1.7.7 Windows release into ignored
+  local evidence, verify its published SHA256 checksum, and run the standalone
+  validator. Exit 0; no daemon start or system-wide installation performed.
