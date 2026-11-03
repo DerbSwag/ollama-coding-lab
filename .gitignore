@@ -1,0 +1,9 @@
+.evidence/
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.pfx
+*.p12
+node_modules/

@@ -1,0 +1,12 @@
+.git
+.evidence
+.env
+.env.*
+node_modules
+tests
+docs
+.github
+**/*.pem
+**/*.key
+**/*.pfx
+**/*.p12
