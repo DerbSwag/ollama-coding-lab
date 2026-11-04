@@ -19,7 +19,9 @@ $relativePaths = @(
     'scripts/Collect-Evidence.ps1', 'scripts/Invoke-SecurityAudit.ps1',
     'tests/Test-SecurityGate.ps1', 'tests/Test-ScannerIntegration.ps1',
     'tests/fixtures/Dockerfile.insecure', '.dockerignore',
-    '.github/workflows/security-audit.yml'
+    '.github/workflows/security-audit.yml',
+    'package.json', 'server.js', 'healthcheck.js', 'scripts/validate-container.mjs',
+    'scripts/lib/validation.mjs', 'tests/api.test.mjs', 'tests/supply-chain.test.mjs'
 )
 $hashes = @(
     foreach ($relative in $relativePaths) {

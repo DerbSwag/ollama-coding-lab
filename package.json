@@ -1,0 +1,12 @@
+{
+  "name": "ollama-coding-lab-demo",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "start": "node server.js",
+    "test": "node --test tests/api.test.mjs tests/supply-chain.test.mjs",
+    "validate:container": "node scripts/validate-container.mjs"
+  }
+}

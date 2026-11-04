@@ -77,3 +77,33 @@
 - Mitigation: download the official actionlint 1.7.7 Windows release into ignored
   local evidence, verify its published SHA256 checksum, and run the standalone
   validator. Exit 0; no daemon start or system-wide installation performed.
+
+## 2026-11-03: Phase 3 bundled package-manager CVEs
+
+- Problem: first real image scan found six HIGH vulnerabilities and correctly
+  failed validation despite successful build/runtime/SBOM checks.
+- Confirmed cause: brace-expansion 5.0.9 and undici 6.28.0 in the official base's
+  bundled npm dependency tree; not dependencies of the demo application.
+- Mitigation: remove unused npm/Yarn/Corepack in a preparation stage and copy the
+  cleaned filesystem into the final stage, so vulnerable files are absent from
+  final layers. Rescan found 0 blocking HIGH/CRITICAL findings without exceptions.
+- All six remediated CVEs and before/after evidence are listed under
+  `Confirmed vulnerability remediation` in the Phase 3 audit document.
+
+## 2026-11-03: Local test sandbox and guessed image tag
+
+- Observed errors: initial local node:test process spawning returned EPERM in the
+  restricted sandbox; guessed official tag 24.14.0-alpine3.24 was not found.
+- Mitigation: run authorized tests with child-process/localhost access; resolve
+  the published node:24-alpine digest, then verify actual Node 24.22.2 inside it.
+  No failed test is recorded as PASS, and no guessed tag was used for the build.
+
+## 2026-11-03: Docker OCI identity differs from scanner configuration digest
+
+- Observation: Docker containerd store returns an OCI index digest while Trivy
+  reports a different image configuration digest for the same exported image.
+- Confirmed explanation: archive index, config blob and runtime rootfs DiffIDs
+  were inspected; the IDs refer to different OCI object types, not different code.
+- Mitigation: verify runtime layer DiffIDs and unique ownership label against
+  SBOM/scan, match SBOM config digest to scan config digest, and hash the exact
+  exported archive. Regression cases reject foreign run/layer metadata.
