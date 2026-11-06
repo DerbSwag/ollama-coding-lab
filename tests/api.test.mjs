@@ -5,6 +5,63 @@ import { spawn } from 'node:child_process';
 import { get } from 'node:http';
 import { fileURLToPath } from 'node:url';
 import { createApp } from '../server.js';
+import { createServer } from 'node:http';
+
+const healthcheck = fileURLToPath(new URL('../healthcheck.js', import.meta.url));
+
+async function runHealthcheck(t, handler) {
+  const server = createServer(handler).listen(0, '127.0.0.1');
+  await once(server, 'listening');
+  let child;
+  t.after(async () => {
+    if (child && child.exitCode === null && child.signalCode === null) {
+      child.kill('SIGKILL');
+      await Promise.race([once(child, 'exit'), new Promise((resolve) => setTimeout(resolve, 1_000))]);
+    }
+    server.closeAllConnections();
+    await new Promise((resolve) => server.close(resolve));
+  });
+  child = spawn(process.execPath, [healthcheck], {
+    env: { ...process.env, PORT: String(server.address().port) }, stdio: 'ignore',
+  });
+  const exit = await Promise.race([
+    once(child, 'exit').then(([code]) => ({ code })),
+    once(child, 'error').then((error) => ({ error })),
+    new Promise((resolve) => setTimeout(() => resolve({ timeout: true }), 5_000)),
+  ]);
+  if (exit.error) throw new Error(`Unable to spawn healthcheck: ${exit.error.message}`);
+  if (exit.timeout) throw new Error('Healthcheck child exceeded 5 second test deadline');
+  const code = exit.code;
+  return code;
+}
+
+test('healthcheck accepts a complete healthy response', async (t) => {
+  assert.equal(await runHealthcheck(t, (_req, res) => res.end('{"status":"ok"}')), 0);
+});
+test('healthcheck rejects HTTP error responses', async (t) => {
+  assert.equal(await runHealthcheck(t, (_req, res) => { res.statusCode = 503; res.end('{"status":"ok"}'); }), 1);
+});
+test('healthcheck rejects malformed JSON', async (t) => {
+  assert.equal(await runHealthcheck(t, (_req, res) => res.end('{')), 1);
+});
+test('healthcheck rejects oversized bodies', async (t) => {
+  assert.equal(await runHealthcheck(t, (_req, res) => res.end('x'.repeat(1025))), 1);
+});
+test('healthcheck rejects prematurely closed responses', async (t) => {
+  assert.equal(await runHealthcheck(t, (_req, res) => { res.writeHead(200, { 'Content-Length': '100' }); res.write('{'); res.destroy(); }), 1);
+});
+test('healthcheck rejects a partial HTTP 200 response that times out', { timeout: 10_000 }, async (t) => {
+  assert.equal(await runHealthcheck(t, (_req, res) => { res.writeHead(200); res.write('{'); }), 1);
+});
+test('healthcheck rejects connection refusal', async (t) => {
+  const server = createServer().listen(0, '127.0.0.1');
+  await once(server, 'listening');
+  const port = server.address().port;
+  await new Promise((resolve) => server.close(resolve));
+  const child = spawn(process.execPath, [healthcheck], { env: { ...process.env, PORT: String(port) }, stdio: 'ignore' });
+  const [code] = await once(child, 'exit');
+  assert.equal(code, 1);
+});
 
 test('HTTP routing and method contract', async (t) => {
   const server = createApp().listen(0, '127.0.0.1');
