@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict';
-import { mkdirSync, readFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, statSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { runProcess, writeJson, sha256, evaluateImageScan, sbomIdentity } from './lib/validation.mjs';
+import { runProcess, writeJson, sha256, evaluateImageScan, sbomIdentity, scannerUserArgs } from './lib/validation.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const runId = randomUUID();
@@ -186,11 +186,13 @@ try {
       const tools = JSON.parse(readFileSync(join(root, 'security-tools.json'), 'utf8').replace(/^\uFEFF/, ''));
       assert.match(tools.trivy, /@sha256:[a-f0-9]{64}$/);
       report.scanner = tools.trivy;
-      mkdirSync(join(output, 'cache'), { recursive: true });
+      const cacheDir = join(output, 'cache');
+      mkdirSync(cacheDir, { recursive: true });
+      const scannerUser = scannerUserArgs(process.platform, statSync(cacheDir));
       const scanner = ['run', '--rm', '--name', `${names.runtime}-scanner`, '--label', `${labelKey}=${runId}`, '--read-only', '--cap-drop=ALL',
-        '--security-opt=no-new-privileges', '--tmpfs', '/tmp:rw,nosuid,nodev',
+        '--security-opt=no-new-privileges', '--tmpfs', '/tmp:rw,nosuid,nodev', ...scannerUser,
         '--mount', `type=bind,source=${join(output, 'image.tar')},target=/input/image.tar,readonly`,
-        '--mount', `type=bind,source=${join(output, 'cache')},target=/cache`, tools.trivy,
+        '--mount', `type=bind,source=${cacheDir},target=/cache`, tools.trivy,
         '--cache-dir', '/cache', '--config', '/dev/null', 'image', '--input', '/input/image.tar',
         '--scanners', 'vuln', '--ignorefile', '/dev/null', '--skip-version-check', '--timeout', '10m'];
       await step('sbom', () => {

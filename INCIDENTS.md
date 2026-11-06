@@ -107,3 +107,19 @@
 - Mitigation: verify runtime layer DiffIDs and unique ownership label against
   SBOM/scan, match SBOM config digest to scan config digest, and hash the exact
   exported archive. Regression cases reject foreign run/layer metadata.
+
+## 2026-11-06: Phase 3 CI Trivy cache permission failure
+
+- Problem: GitHub Actions run 42240310223 passed container runtime checks but
+  blocked SBOM and image scan when Trivy reported `mkdir /cache/db: permission denied`.
+- Likely cause: the Linux runner creates the bind-mounted cache as its own UID/GID,
+  while the scanner process ran with a different effective identity. The log
+  proves the permission failure; the exact CI UID/GID mismatch remains unverified.
+- Mitigation: on native Linux, read the actual cache directory owner and pass
+  `--user UID:GID` to the pinned Trivy container. Docker Desktop on Windows keeps
+  its prior user behavior. Read-only root, dropped capabilities, no-new-privileges,
+  provenance checks, and HIGH/CRITICAL policy remain in force.
+- Local verification: Node tests 33 pass/2 Windows signal skips; Docker Phase 3
+  12/12 PASS including SBOM and scan; original scanner integration 2/2 PASS.
+  Operational scanner exit 125 remains BLOCKED in regression coverage. Hosted
+  Linux correction is pending a new authorized CI run.

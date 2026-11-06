@@ -14,6 +14,13 @@ export function runProcess(command, args, { timeout = 120_000, cwd } = {}) {
 export function writeJson(path, value) { writeFileSync(path, JSON.stringify(value, null, 2) + '\n'); }
 export function sha256(path) { return createHash('sha256').update(readFileSync(path)).digest('hex'); }
 
+export function scannerUserArgs(platform, owner) {
+  if (platform !== 'linux') return [];
+  assert.ok(Number.isSafeInteger(owner.uid) && owner.uid >= 0, 'Invalid scanner cache owner UID');
+  assert.ok(Number.isSafeInteger(owner.gid) && owner.gid >= 0, 'Invalid scanner cache owner GID');
+  return ['--user', `${owner.uid}:${owner.gid}`];
+}
+
 export function sbomIdentity(sbom, runtimeLayers, runId) {
   const properties = sbom.metadata?.component?.properties;
   assert.ok(Array.isArray(properties), 'SBOM image provenance missing');

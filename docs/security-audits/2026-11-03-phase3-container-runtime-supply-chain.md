@@ -123,9 +123,9 @@ Main command: `node scripts/validate-container.mjs`; JavaScript tests:
 `node --test tests/api.test.mjs tests/supply-chain.test.mjs`. Original PowerShell
 contract/integration commands remain unchanged.
 
-Phase 3 GitHub-hosted execution/artifact upload is NOT_RUN: publishing is forbidden
-in the current authorization. Hosted compatibility is a pending acceptance gate,
-not inferred from local success. No commit/push/PR/merge/deploy performed.
+At the original 2026-11-03 local implementation, Phase 3 GitHub-hosted
+execution/artifact upload was NOT_RUN. Later hosted run 42240310223 is recorded
+in the 2026-11-06 remediation section below; the new fix has not run there yet.
 
 Only Linux/amd64 was run. Windows signal tests are skipped locally and verified
 inside Linux instead. SBOM checks validate core fields/identity, not every official
@@ -137,9 +137,42 @@ claims, OS sandbox guarantee, or full supply-chain security certification is mad
 
 ## Rollback and retained resources
 
-Main remains unchanged at the baseline. Source is uncommitted and preserved for
-review; no reset/checkout/clean/revert performed. No service was deployed. Owned
+At the original local implementation, main remained unchanged and the source was
+uncommitted. No reset/checkout/clean/revert was performed. No service was deployed. Owned
 container stop/start recovery and failed-start cleanup were verified. Uniquely
 tagged local images, archives and caches remain for inspection; unrelated resources
 were never deleted. For manual rollback/cleanup, use exact recorded IDs and labels
 as described in RUNBOOK.md, with authorization for any source restoration.
+
+## 2026-11-06 Trivy cache permission remediation
+
+GitHub Actions run 42240310223 passed container runtime controls, then marked
+SBOM and image vulnerability scanning BLOCKED. Trivy reported
+`mkdir /cache/db: permission denied`. The bind-mounted cache is created by the
+native Linux runner; a mismatch between its owner and the scanner identity is
+the likely explanation, but the exact hosted UID/GID values were not captured.
+
+The scanner now reads the run-specific cache directory's UID/GID on native Linux
+and inserts `--user UID:GID` before the pinned Trivy image in `docker run`.
+Windows Docker Desktop retains the previous image-user behavior. The mount stays
+writable only for the cache; `--read-only`, `--cap-drop=ALL`,
+`--security-opt=no-new-privileges`, SBOM identity checks, the HIGH/CRITICAL gate,
+and nonzero/BLOCKED handling are unchanged. No chmod 777 or privileged container.
+
+Local commands and observed outcomes on 2026-11-06:
+
+| Command | Outcome |
+| --- | --- |
+| `node --test tests/api.test.mjs tests/supply-chain.test.mjs` | Exit 0; 35 tests, 33 pass, 2 Windows signal skips, 0 fail |
+| `node scripts/validate-container.mjs` | Exit 0; 12/12 PASS, including SBOM and image scan with 0 HIGH/CRITICAL blockers |
+| `powershell -NoProfile -File tests/Test-ScannerIntegration.ps1` | Exit 0; insecure fixture rejected, secure baseline passed, 2/2 PASS |
+| `git diff --check` | Exit 0; no whitespace errors |
+
+Evidence: `.evidence/phase3-2d281adf-bb9f-4ac5-a0a0-b3c9926d3301/phase3.json`
+and `.evidence/scanner-integration-768cbc0bb3104d1cabffb1da51a68363/test-results.json`.
+The unit suite confirms native Linux UID/GID arguments, Windows omission, and
+invalid ownership rejection; existing regression coverage confirms scanner exit
+125 is BLOCKED. Initial restricted-shell attempts were blocked by `spawn EPERM`
+and Docker pipe permission denial, then rerun successfully with local engine access.
+Native Linux hosted remediation remains NOT_VERIFIED until a fresh authorized CI
+run. No source commit, push, PR, merge, or deployment was performed.

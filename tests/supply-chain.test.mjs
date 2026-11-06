@@ -1,6 +1,16 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { runProcess, evaluateImageScan, sbomIdentity } from '../scripts/lib/validation.mjs';
+import { runProcess, evaluateImageScan, sbomIdentity, scannerUserArgs } from '../scripts/lib/validation.mjs';
+
+test('native Linux scanner runs as the bind-mounted cache owner', () => {
+  assert.deepEqual(scannerUserArgs('linux', { uid: 1001, gid: 1002 }), ['--user', '1001:1002']);
+});
+test('Docker Desktop keeps its image user on Windows', () => {
+  assert.deepEqual(scannerUserArgs('win32', { uid: 0, gid: 0 }), []);
+});
+test('invalid native cache ownership cannot silently run the scanner', () => {
+  assert.throws(() => scannerUserArgs('linux', { uid: undefined, gid: 1001 }));
+});
 
 test('ordinary child stderr is captured without converting success to failure', () => {
   const result = runProcess(process.execPath, ['-e', 'console.log("out");console.error("err")']);

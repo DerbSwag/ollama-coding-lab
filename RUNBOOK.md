@@ -63,6 +63,14 @@ Each invocation uses its own ignored `.evidence/phase3-<UUID>/` directory:
 | `image.tar` | Local export retained for reproduction; never uploaded by the workflow |
 | `cache/` | Run-specific scanner cache; never uploaded by the workflow |
 
+On native Linux, Phase 3 runs the Trivy container with the UID/GID that owns the
+run-specific bind-mounted `cache/` directory. On Windows Docker Desktop, it
+leaves the scanner image user unchanged. This addresses the `/cache/db` permission
+failure observed in GitHub Actions run 42240310223 without changing scanner
+privileges or policy. A cache ownership/stat failure blocks validation; review
+`phase3.json` and the numbered command records. The hosted Linux fix requires a
+new CI run before it can be marked verified.
+
 On Docker's containerd image store, the Docker image identity can be an OCI index
 digest, while Trivy reports the image configuration digest. They need not be equal.
 The script verifies rootfs DiffIDs and the unique run label against both reports,
@@ -108,8 +116,9 @@ To inspect a previously passing result, use its exact `imageTag`/`imageId` and J
 evidence. Any manual run must keep loopback-only publishing and the verified flags.
 Stop only that manually created container by its exact ID/name when finished.
 
-Source changes are uncommitted. Preserve the diff and obtain authorization before
-restoring selected source files or creating a revert commit. Do not use reset/clean
+The 2026-11-06 cache fix is uncommitted on feature/container-runtime-supply-chain.
+Preserve the diff and obtain authorization before restoring selected source files
+or creating a revert commit. Do not use reset/clean
 or overwrite unrelated changes. No source rollback was executed; container recovery
 and startup-failure cleanup were actually tested.
 
@@ -121,8 +130,9 @@ uploads allowlisted JSON/SBOM evidence with 7-day retention even on failure. Har
 cancellation before evidence creation can leave incomplete artifacts. No raw archive
 or database cache is uploaded. Review evidence paths/metadata before sharing.
 
-Phase 3 GitHub-hosted execution is NOT_RUN pending explicit authorization to publish
-the changes. After the first successful hosted run, require the new Container Runtime
+Phase 3 GitHub-hosted run 42240310223 verified runtime controls but blocked SBOM
+and image scanning on cache permissions. A new hosted run of the cache fix is
+pending explicit authorization to publish it. After the first successful hosted run, require the new Container Runtime
 and Supply Chain check in addition to existing required checks; no branch protection
 settings are changed by this implementation. Multi-architecture execution, publisher signature validation, full SBOM
 schema certification, load testing, persistent-data migration and production rollback
