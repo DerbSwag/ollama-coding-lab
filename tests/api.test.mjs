@@ -2,37 +2,71 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { once } from 'node:events';
 import { spawn } from 'node:child_process';
-import { get } from 'node:http';
+import { createServer, get } from 'node:http';
 import { fileURLToPath } from 'node:url';
 import { createApp } from '../server.js';
-import { createServer } from 'node:http';
 
 const healthcheck = fileURLToPath(new URL('../healthcheck.js', import.meta.url));
 
-async function runHealthcheck(t, handler) {
+async function waitForChild(child, timeoutMs = 5_000) {
+  let timer;
+  let onExit;
+  let onError;
+  const exited = new Promise((resolve, reject) => {
+    onExit = (code, signal) => resolve({ code, signal });
+    onError = (error) => reject(new Error(`Unable to spawn child process: ${error.message}`, { cause: error }));
+    child.once('exit', onExit);
+    child.once('error', onError);
+    timer = setTimeout(() => reject(new Error(`Child process exceeded ${timeoutMs}ms deadline`)), timeoutMs);
+  });
+  try {
+    return await exited;
+  } catch (error) {
+    if (error.message.includes('deadline') && child.exitCode === null && child.signalCode === null) {
+      const reaped = once(child, 'exit');
+      child.kill('SIGKILL');
+      await Promise.race([reaped, new Promise((resolve) => setTimeout(resolve, 1_000))]);
+      if (child.exitCode === null && child.signalCode === null) {
+        throw new Error(`Child process could not be reaped after timeout: ${error.message}`);
+      }
+    }
+    throw error;
+  } finally {
+    clearTimeout(timer);
+    child.removeListener('exit', onExit);
+    child.removeListener('error', onError);
+  }
+}
+
+async function runHealthcheck(t, handler, { refuse = false } = {}) {
   const server = createServer(handler).listen(0, '127.0.0.1');
   await once(server, 'listening');
   let child;
   t.after(async () => {
-    if (child && child.exitCode === null && child.signalCode === null) {
-      child.kill('SIGKILL');
-      await Promise.race([once(child, 'exit'), new Promise((resolve) => setTimeout(resolve, 1_000))]);
+    try {
+      if (child && child.exitCode === null && child.signalCode === null) {
+        try { await waitForChild(child, 1_000); } catch {
+          if (child.exitCode === null && child.signalCode === null) {
+            const reaped = once(child, 'exit');
+            child.kill('SIGKILL');
+            await Promise.race([reaped, new Promise((resolve) => setTimeout(resolve, 1_000))]);
+          }
+        }
+      }
+    } finally {
+      server.closeAllConnections();
+      if (server.listening) await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
     }
+  });
+  const port = server.address().port;
+  if (refuse) {
     server.closeAllConnections();
-    await new Promise((resolve) => server.close(resolve));
-  });
+    await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+  }
   child = spawn(process.execPath, [healthcheck], {
-    env: { ...process.env, PORT: String(server.address().port) }, stdio: 'ignore',
+    env: { ...process.env, PORT: String(port) }, stdio: 'ignore',
   });
-  const exit = await Promise.race([
-    once(child, 'exit').then(([code]) => ({ code })),
-    once(child, 'error').then((error) => ({ error })),
-    new Promise((resolve) => setTimeout(() => resolve({ timeout: true }), 5_000)),
-  ]);
-  if (exit.error) throw new Error(`Unable to spawn healthcheck: ${exit.error.message}`);
-  if (exit.timeout) throw new Error('Healthcheck child exceeded 5 second test deadline');
-  const code = exit.code;
-  return code;
+  return (await waitForChild(child)).code;
 }
 
 test('healthcheck accepts a complete healthy response', async (t) => {
@@ -54,13 +88,7 @@ test('healthcheck rejects a partial HTTP 200 response that times out', { timeout
   assert.equal(await runHealthcheck(t, (_req, res) => { res.writeHead(200); res.write('{'); }), 1);
 });
 test('healthcheck rejects connection refusal', async (t) => {
-  const server = createServer().listen(0, '127.0.0.1');
-  await once(server, 'listening');
-  const port = server.address().port;
-  await new Promise((resolve) => server.close(resolve));
-  const child = spawn(process.execPath, [healthcheck], { env: { ...process.env, PORT: String(port) }, stdio: 'ignore' });
-  const [code] = await once(child, 'exit');
-  assert.equal(code, 1);
+  assert.equal(await runHealthcheck(t, () => {}, { refuse: true }), 1);
 });
 
 test('HTTP routing and method contract', async (t) => {
