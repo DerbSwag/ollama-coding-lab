@@ -5,9 +5,10 @@ Ollama explains findings; **only static analysis determines the security gate**.
 
 ## Security audit pipeline
 
-Work is isolated on `feature/security-audit-pipeline`, based on `main`.
-The pipeline scans files without building the app, running `npm install`, executing
-application code, deploying, or calling Ollama/cloud LLM APIs.
+Phase 3 is isolated on `feature/container-runtime-supply-chain`, based on verified
+`main` commit `6677200`. The original Phase 1-2 jobs scan files without building or
+executing the app. Phase 3 adds a separate container runtime/supply-chain job.
+Neither path deploys, uses `npm install`, or calls Ollama/cloud LLM APIs.
 
 | Check | Blocking policy |
 | --- | --- |
@@ -22,23 +23,24 @@ Containers mount the repo read-only, drop capabilities, have no Docker socket or
 credential mounts, and use a read-only root filesystem. Hadolint has no network;
 Trivy needs internet for databases/policy bundles and writes only to temporary storage.
 
-The root Dockerfile is a static secure baseline: it uses `USER node` and copies
-source with `--chown=node:node`. The original root-user example is preserved in
+The root Dockerfile uses `USER node` and copies source with `--chown=node:node`.
+The original root-user example is preserved in
 `tests/fixtures/Dockerfile.insecure` for real negative enforcement tests.
 `.dockerignore` excludes local evidence, credentials, dependency directories and
 test/documentation files from the build context.
 
-This is not a production-ready application. No `package.json` or `server.js` exists,
-so it cannot build a working app yet. Dependency installation, base-image CVEs,
-runtime permissions, writable paths, health checks and actual runtime behavior
-still need validation when application files are introduced. A static PASS alone
-does not establish these properties.
+Phase 3 includes a minimal dependency-free Node HTTP API, digest-pinned multi-stage
+image, functional healthcheck, runtime checks, CycloneDX SBOM and HIGH/CRITICAL image
+vulnerability enforcement. No external npm dependencies are declared or installed;
+no lockfile is needed for this dependency-free build. This is a demonstration, not
+a production service or security certification.
 
 ## Windows quick start
 
 Prerequisites: Windows PowerShell 5.1 or PowerShell 7, Docker Desktop running in
 Linux container mode, and internet access to registries/Trivy databases.
 No native Hadolint/Trivy install or API key is required.
+Phase 3 also requires host Node.js 22+ (24 recommended) and Linux/amd64 Docker support.
 
 ```powershell
 Set-Location "$HOME\Projects\ollama-coding-lab"
@@ -61,6 +63,13 @@ powershell -NoProfile -File .\tests\Test-SecurityGate.ps1
 
 # Real scanners: verify fixture rejection AND root baseline acceptance.
 powershell -NoProfile -File .\tests\Test-ScannerIntegration.ps1
+$LASTEXITCODE
+
+# Phase 3 API, process failure and image-policy/provenance tests.
+node --test tests/api.test.mjs tests/supply-chain.test.mjs
+
+# Build, verify runtime/recovery, generate SBOM and enforce image policy.
+node scripts/validate-container.mjs
 $LASTEXITCODE
 ```
 
@@ -100,9 +109,9 @@ test. No severity threshold or rule is disabled. New production files must not b
 placed under the fixture directory.
 Secret scanning is **not enabled**, avoiding raw secret matches in uploaded reports;
 this does not prove absence of secrets. It scans the working tree, not Git history.
-Dependency coverage requires supported manifests/lockfiles; this lab has none yet.
-No built-image/base-image CVE scan, runtime test, exhaustive CI workflow audit, or
-complete IaC validation is claimed. Hadolint covers only the root Dockerfile.
+The demo manifest declares no external dependencies. Filesystem scanning is not
+image coverage: Phase 3 separately scans the exported image. Exhaustive CI workflow
+auditing and complete IaC validation are not claimed. Hadolint covers only the root Dockerfile.
 Add explicit coverage if more Dockerfiles are introduced. Unfixed vulnerabilities
 are not exempted. Databases are downloaded into temporary storage on each real run.
 
@@ -112,6 +121,9 @@ are not exempted. Databases are downloaded into temporary storage on each real r
 `feature/security-audit-pipeline`, and manual dispatch. Separate jobs run the 37
 offline contracts on Windows PowerShell 5.1 (`windows-2022`) and PowerShell 7
 (`ubuntu-24.04`), then enforce real positive/negative scanner integration on Ubuntu.
+Pushes to `feature/container-runtime-supply-chain` also trigger validation.
+The new Container Runtime and Supply Chain job explicitly requires Static Analysis
+Gate success; it cannot replace or override the original jobs.
 The policy job runs even after contract failure and explicitly requires the matrix
 result to be `success`; a failed prerequisite cannot become a skipped green gate.
 
@@ -127,6 +139,8 @@ evidence. Trivy repo config/ignore files are disabled for this gate.
 
 After an approved Phase 2 push and Actions run, configure GitHub rulesets/branch
 protection to require **Static Analysis Gate** before merging into `main`.
+After Phase 3 hosted validation, require **Container Runtime and Supply Chain** as
+an additional check; a passing static-only check does not imply runtime acceptance.
 Require review of pipeline/policy changes too. Adding a workflow alone does not
 enforce merge protection. This implementation does not change GitHub settings or
 publish a branch/PR automatically.
@@ -148,7 +162,46 @@ at commit `d4a0d9c`: the job failed on the intentionally root-user Dockerfile, a
 evidence upload succeeded. This expected rejection is not a green CI run.
 Phase 2 changes/results: `docs/security-audits/2026-11-02-phase2-merge-ready-pipeline.md`.
 Phase 2 at `0b2e1d4` passed the [PR workflow](https://github.com/DerbSwag/ollama-coding-lab/actions/runs/41653749463)
-with all three jobs and artifact uploads successful. PR #1 remains open.
-The separate SHA-pinned Node24 Action refresh requires fresh head checks before
-merge; review details are in `docs/security-audits/2026-11-03-final-review-node24-actions.md`.
+with all three jobs and artifact uploads successful. The subsequent Node24 refresh
+at `49cf25a` passed push/PR runs and review, then PR #1 was squash-merged as `6677200`.
+Review history: `docs/security-audits/2026-11-03-final-review-node24-actions.md`.
 Operational failure root causes and mitigations: `INCIDENTS.md`.
+
+## Phase 3: demo container and supply chain
+
+`GET /` returns service/version JSON; `GET /health` returns HTTP 200 and
+`{"status":"ok"}`. Unknown GET routes return 404, unsupported methods return 405
+with `Allow: GET`, and malformed URLs return 400. SIGTERM/SIGINT close the server
+gracefully with a bounded drain period. Default port is 3000; invalid PORT exits 1.
+
+The Dockerfile pins the official Node 24 image by digest. A preparation stage
+removes unused npm/Yarn/Corepack; the final `scratch` stage copies that cleaned
+Alpine/Node filesystem, including libraries and the node user. The final image
+still contains Alpine; `scratch` here does not mean a static binary or distroless
+image. Explicit COPY includes only package.json, server.js and healthcheck.js.
+Removed vulnerable packages are absent from final image layers, not just hidden
+by an ignore rule. No npm installation or package-manager runtime is required.
+
+Validation uses an ephemeral port on **127.0.0.1 only**, non-root UID 1000,
+read-only root, all capabilities dropped, no-new-privileges and bounded memory/PIDs.
+It verifies effective kernel state, HTTP/container health, EROFS on a write probe,
+failed startup, failed health probe, SIGTERM/SIGINT and stop/start recovery. The API
+listens on 0.0.0.0 inside the container; Docker enforces the host publish restriction.
+
+Each run writes `.evidence/phase3-<UUID>/phase3.json`, `sbom.cdx.json`,
+`image-vulnerabilities.json` and command stdout/stderr/exit records. Source hashes,
+Docker image identity, archive SHA256, rootfs DiffIDs, SBOM config digest and run
+labels are verified together. Trivy receives only a read-only image archive and
+dedicated cache, never the host Docker socket. HIGH/CRITICAL findings, inconsistent
+reports, scanner errors and unverifiable controls cannot produce overall PASS.
+
+Only exact run-specific container names with matching ownership labels are removed.
+Images and local archives/caches remain for review/rollback. CI uploads JSON/SBOM
+evidence with 7-day retention, excluding archives/caches. Review evidence for paths
+and metadata before sharing. Abrupt termination or engine loss may require manual
+cleanup of the exact recorded owned names.
+
+Validated locally on Windows/Docker Desktop; Phase 3 hosted CI is **NOT_RUN** until
+an explicitly authorized push. See [RUNBOOK.md](RUNBOOK.md) and
+`docs/security-audits/2026-11-03-phase3-container-runtime-supply-chain.md` for commands,
+results, image/SBOM identities, limitations and rollback procedures.

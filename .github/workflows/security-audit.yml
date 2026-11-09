@@ -4,7 +4,7 @@ on:
   pull_request:
     branches: [main]
   push:
-    branches: [main, feature/security-audit-pipeline]
+    branches: [main, feature/security-audit-pipeline, feature/container-runtime-supply-chain]
   workflow_dispatch:
 
 permissions:
@@ -45,6 +45,44 @@ jobs:
         with:
           name: gate-contracts-${{ matrix.os }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: .evidence/gate-test-*/test-results.json
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 7
+
+  container-runtime:
+    name: Container Runtime and Supply Chain
+    needs: static-analysis
+    if: ${{ always() }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1 (Node.js 24)
+        with:
+          persist-credentials: false
+
+      - name: Require original security gate
+        shell: pwsh
+        env:
+          STATIC_GATE_RESULT: ${{ needs.static-analysis.result }}
+        run: |
+          if ($env:STATIC_GATE_RESULT -ne 'success') {
+            throw 'Original static security gate did not succeed.'
+          }
+
+      - name: Build, verify runtime and enforce image policy
+        run: node scripts/validate-container.mjs
+
+      - name: Upload runtime and supply-chain evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2 (Node.js 24)
+        with:
+          name: container-evidence-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            .evidence/phase3-*/phase3.json
+            .evidence/phase3-*/sbom.cdx.json
+            .evidence/phase3-*/image-vulnerabilities.json
+            .evidence/phase3-*/commands/*.json
           include-hidden-files: true
           if-no-files-found: error
           retention-days: 7

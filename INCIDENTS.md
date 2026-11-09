@@ -77,3 +77,49 @@
 - Mitigation: download the official actionlint 1.7.7 Windows release into ignored
   local evidence, verify its published SHA256 checksum, and run the standalone
   validator. Exit 0; no daemon start or system-wide installation performed.
+
+## 2026-11-03: Phase 3 bundled package-manager CVEs
+
+- Problem: first real image scan found six HIGH vulnerabilities and correctly
+  failed validation despite successful build/runtime/SBOM checks.
+- Confirmed cause: brace-expansion 5.0.9 and undici 6.28.0 in the official base's
+  bundled npm dependency tree; not dependencies of the demo application.
+- Mitigation: remove unused npm/Yarn/Corepack in a preparation stage and copy the
+  cleaned filesystem into the final stage, so vulnerable files are absent from
+  final layers. Rescan found 0 blocking HIGH/CRITICAL findings without exceptions.
+- All six remediated CVEs and before/after evidence are listed under
+  `Confirmed vulnerability remediation` in the Phase 3 audit document.
+
+## 2026-11-03: Local test sandbox and guessed image tag
+
+- Observed errors: initial local node:test process spawning returned EPERM in the
+  restricted sandbox; guessed official tag 24.14.0-alpine3.24 was not found.
+- Mitigation: run authorized tests with child-process/localhost access; resolve
+  the published node:24-alpine digest, then verify actual Node 24.22.2 inside it.
+  No failed test is recorded as PASS, and no guessed tag was used for the build.
+
+## 2026-11-03: Docker OCI identity differs from scanner configuration digest
+
+- Observation: Docker containerd store returns an OCI index digest while Trivy
+  reports a different image configuration digest for the same exported image.
+- Confirmed explanation: archive index, config blob and runtime rootfs DiffIDs
+  were inspected; the IDs refer to different OCI object types, not different code.
+- Mitigation: verify runtime layer DiffIDs and unique ownership label against
+  SBOM/scan, match SBOM config digest to scan config digest, and hash the exact
+  exported archive. Regression cases reject foreign run/layer metadata.
+
+## 2026-11-06: Phase 3 CI Trivy cache permission failure
+
+- Problem: GitHub Actions run 42240310223 passed container runtime checks but
+  blocked SBOM and image scan when Trivy reported `mkdir /cache/db: permission denied`.
+- Likely cause: the Linux runner creates the bind-mounted cache as its own UID/GID,
+  while the scanner process ran with a different effective identity. The log
+  proves the permission failure; the exact CI UID/GID mismatch remains unverified.
+- Mitigation: on native Linux, read the actual cache directory owner and pass
+  `--user UID:GID` to the pinned Trivy container. Docker Desktop on Windows keeps
+  its prior user behavior. Read-only root, dropped capabilities, no-new-privileges,
+  provenance checks, and HIGH/CRITICAL policy remain in force.
+- Local verification: Node tests 33 pass/2 Windows signal skips; Docker Phase 3
+  12/12 PASS including SBOM and scan; original scanner integration 2/2 PASS.
+  Operational scanner exit 125 remains BLOCKED in regression coverage. Hosted
+  Linux correction is pending a new authorized CI run.
