@@ -124,6 +124,20 @@ and startup-failure cleanup were actually tested.
 
 ## CI and limitations
 
+### Scheduled security scan
+
+`.github/workflows/scheduled-security-scan.yml` runs Sundays at 02:17 UTC and
+supports manual dispatch. It invokes the existing evidence collector and static
+security gate with no additional secrets or write permissions. Evidence upload
+runs even after a failed scan, and missing evidence fails the job. Artifacts are
+retained for seven days. GitHub run status is the initial alert path; delivery
+depends on each user's GitHub notification settings.
+
+Validate the workflow contract locally with
+`powershell -NoProfile -File tests/Test-ScheduledWorkflow.ps1`. Scanner failure,
+invalid output, or HIGH/CRITICAL findings fail the scheduled run under the same
+policy as the existing gate.
+
 Original Windows/Linux contracts and Static Analysis Gate remain unchanged. A new
 Container Runtime and Supply Chain job requires Static Analysis Gate success and
 uploads allowlisted JSON/SBOM evidence with 7-day retention even on failure. Hard

@@ -1,0 +1,64 @@
+name: Scheduled Security Scan
+
+on:
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: '17 2 * * 0'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: scheduled-security-scan-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  workflow-contracts:
+    name: Scheduled Workflow Contracts
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1 (Node.js 24)
+        with:
+          persist-credentials: false
+
+      - name: Validate scheduled workflow contract
+        shell: pwsh
+        run: ./tests/Test-ScheduledWorkflow.ps1
+
+  security-scan:
+    name: Reuse Static Security Gate
+    needs: workflow-contracts
+    if: ${{ needs.workflow-contracts.result == 'success' && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1 (Node.js 24)
+        with:
+          persist-credentials: false
+
+      - name: Collect environment evidence
+        shell: pwsh
+        run: ./scripts/Collect-Evidence.ps1
+
+      - name: Run static security gate
+        shell: pwsh
+        run: ./scripts/Invoke-SecurityAudit.ps1
+
+      - name: Upload scan evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2 (Node.js 24)
+        with:
+          name: scheduled-security-evidence-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            .evidence/environment.json
+            .evidence/gate.json
+            .evidence/hadolint.json
+            .evidence/trivy.json
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 7
